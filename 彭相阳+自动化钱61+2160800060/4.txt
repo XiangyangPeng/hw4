@@ -1,0 +1,352 @@
+#include <cv.h>
+#include <highgui.h>
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <cmath>
+
+using namespace std;
+using namespace cv;
+
+int findMidValue(int* grayValues,int length)
+{
+	int temp;
+	for(int i=0;i<length;i++)
+		for(int j=0;j<length-i-1;j++)
+		{
+			if(grayValues[j]>grayValues[j+1])
+			{
+				temp=grayValues[j+1];
+				grayValues[j+1]=grayValues[j];
+				grayValues[j]=temp;
+			}
+		}
+	return grayValues[(length-1)/2];
+}
+
+void medianFilter(Mat image,int m,int n,
+			int isSave,string name="medianFilter.bmp")
+{
+	Mat_<Vec3b> img = image;
+	int row = image.rows;
+	int col = image.cols;
+	Mat out = image.clone();
+	int a=(m-1)/2,b=(n-1)/2;
+	int grayValues[m*n];
+	for(int i=0;i<row;i++)
+		for(int j=0;j<col;j++)
+		{
+			int temp;
+			int grayValue;
+			for(int p=0;p<m;p++)
+				for(int q=0;q<n;q++)
+				{
+				if(i+p-a<0||j+q-b<0||i+p-a>=row||j+q-b>=col)
+					grayValue=0;
+				else
+					grayValue=image.at<Vec3b>(i+p-a,j+q-b)[0];
+				grayValues[p*n+q]=grayValue;
+				}
+			temp=findMidValue(&grayValues[0],m*n);
+			out.at<Vec3b>(i,j)[0]=temp;
+			out.at<Vec3b>(i,j)[1]=temp;
+			out.at<Vec3b>(i,j)[2]=temp;
+		}
+	imshow("medianFilter", out);
+	waitKey(0);
+	//存储滤波后图片
+	if(isSave==1)
+	{
+		imwrite(name,out);
+	}
+}
+
+double Gaussian(int x,int y,double sigma)
+{
+	double xx=static_cast<double>(x);
+	double yy=static_cast<double>(y);	
+	return exp(-(xx*xx+yy*yy)/(2*sigma*sigma));
+}
+
+void spatialLowpass(Mat image,int m,int n,int method,
+			int isSave,string name="spatialLowpass.bmp")
+{
+	Mat_<Vec3b> img = image;
+	int row = image.rows;
+	int col = image.cols;
+	Mat out = image.clone();
+	//初始化滤波器模板（大小，种类）
+	double filter[m][n];
+	double sum=0;
+	int a=(m-1)/2,b=(n-1)/2;
+	for(int i=0;i<m;i++)
+		for(int j=0;j<n;j++)
+		{
+			switch(method)
+			{
+			case 1:
+				filter[i][j]=1;
+				break;
+			case 2:
+				filter[i][j]=Gaussian(i-a,j-b,1.5);
+				break;
+			default:
+				cout<<"Please choose a correct METHOD!\n";
+				exit(0);
+			}
+			sum+=filter[i][j];
+		}
+			
+	//进行滤波	
+	for(int i=0;i<row;i++)
+		for(int j=0;j<col;j++)
+		{
+			int temp=0;	
+			int grayValue;		
+			for(int mm=0;mm<m;mm++)
+				for(int nn=0;nn<n;nn++)
+				{
+					if(i+mm-a<0||j+nn-b<0||i+mm-a>=row||j+nn-b>=col)
+						grayValue=0;
+					else
+						grayValue=image.at<Vec3b>(i+mm-a,j+nn-b)[0];
+					temp+=filter[mm][nn]*grayValue;
+				}
+			temp=temp/sum;
+			out.at<Vec3b>(i,j)[0]=temp;
+			out.at<Vec3b>(i,j)[1]=temp;
+			out.at<Vec3b>(i,j)[2]=temp;
+		}
+	imshow("spatialLowpass", out);
+	waitKey(0);
+	//存储滤波后图片
+	if(isSave==1)
+	{
+		imwrite(name,out);
+	}
+}
+
+void unsharpMask(Mat image,int k,int m,int n,int method,
+			int isSave,string name="spatialLowpass.bmp") 
+{
+	Mat_<Vec3b> img = image;
+	int row = image.rows;
+	int col = image.cols;
+	//模糊原图像
+	string name1="forunsharp.bmp";
+	spatialLowpass(image,m,n,method,1, name1);
+	Mat image1=imread(name1);
+	
+	Mat out=image.clone();
+	int temp;
+	for(int i=0;i<row;i++)
+		for(int j=0;j<col;j++)
+		{
+			
+			temp=image.at<Vec3b>(i,j)[0]-image1.at<Vec3b>(i,j)[0];
+			temp=image.at<Vec3b>(i,j)[0]+temp*k;
+			//避免超出范围的灰度值
+			if(temp<0)temp=0;
+			if(temp>255)temp=255;
+			out.at<Vec3b>(i,j)[0]=temp;
+			out.at<Vec3b>(i,j)[1]=temp;
+			out.at<Vec3b>(i,j)[2]=temp;
+			 
+		}
+	imshow("unsharpMask", out);
+	waitKey(0);
+	//存储滤波后图片
+	if(isSave==1)
+	{
+		imwrite(name,out);
+	}
+}			
+
+void spatialHighpass(Mat image,int method,
+			int isSave,string name="spatialLowpass.bmp")
+{
+	Mat_<Vec3b> img = image;
+	int row = image.rows;
+	int col = image.cols;
+	Mat out = image.clone();
+	//初始化滤波器模板（大小，种类）
+	switch(method)
+	{
+	case 1: //Laplace edge detection
+	{
+		int filter[3][3]={{1, 1,1},
+				  {1,-8,1},
+				  {1, 1,1}};		
+		for(int i=0;i<row;i++)
+			for(int j=0;j<col;j++)
+			{
+				int temp=0;	
+				int grayValue;		
+				for(int mm=0;mm<3;mm++)
+					for(int nn=0;nn<3;nn++)
+					{
+					if(i+mm-1<0||j+nn-1<0||i+mm-1>=row||j+nn-1>=col)
+						grayValue=0;
+					else
+						grayValue=image.at<Vec3b>(i+mm-1,j+nn-1)[0];
+					temp+=filter[mm][nn]*grayValue;
+					}
+				//避免超出范围的灰度值
+				if(temp<0)temp=0;
+				if(temp>255)temp=255;
+				out.at<Vec3b>(i,j)[0]=temp;
+				out.at<Vec3b>(i,j)[1]=temp;
+				out.at<Vec3b>(i,j)[2]=temp;
+			}
+		break;
+	}
+	case 2: //Sobel edge detector
+	{
+		int filter1[3][3]={{-1,-2,-1},
+				   { 0, 0, 0},
+				   { 1, 2, 1}};
+		int filter2[3][3]={{-1, 0, 1},
+				   {-2, 0, 2},
+				   {-1, 0, 1}};
+		for(int i=0;i<row;i++)
+			for(int j=0;j<col;j++)
+			{
+				int temp=0;
+				int temp1=0;	
+				int temp2=0;
+				int grayValue;		
+				for(int mm=0;mm<3;mm++)
+					for(int nn=0;nn<3;nn++)
+					{
+					if(i+mm-1<0||j+nn-1<0||i+mm-1>=row||j+nn-1>=col)
+						grayValue=0;
+					else
+						grayValue=image.at<Vec3b>(i+mm-1,j+nn-1)[0];
+					temp1+=filter1[mm][nn]*grayValue;
+					temp2+=filter2[mm][nn]*grayValue;
+					}
+				temp=abs(temp1)+abs(temp2);
+				//避免超出范围的灰度值
+				if(temp<0)temp=0;
+				if(temp>255)temp=255;
+				out.at<Vec3b>(i,j)[0]=temp;
+				out.at<Vec3b>(i,j)[1]=temp;
+				out.at<Vec3b>(i,j)[2]=temp;
+			}
+		break;
+	}
+	default:
+		cout<<"Please choose a correct METHOD!\n";
+		exit(0);
+	}
+	imshow("spatialHighpass", out);
+	waitKey(0);
+	//存储滤波后图片
+	if(isSave==1)
+	{
+		imwrite(name,out);
+	}
+}
+
+void canny(Mat image,int m,int n,int lowThr,int highThr,
+			int isSave,string name="cannyEdgDetect.bmp") 
+{
+	//平滑滤波（高斯 5×5）
+	string name1="forCanny1.bmp";
+	spatialLowpass(image,5,5,2,1,name1);
+	//梯度 （sobel）
+	Mat image1=imread(name1);
+	string name2="forCanny2.bmp";
+	spatialHighpass(image1,2,1,name2);
+	
+	Mat image2=imread(name2);
+	Mat_<Vec3b> img = image2;
+	int row = image2.rows;
+	int col = image2.cols;	
+	//非极大值抑制（m×n）
+	Mat image3 = image2.clone();
+	int a=(m-1)/2,b=(n-1)/2;
+	for(int i=0;i<row;i++)
+		for(int j=0;j<col;j++)
+		{
+			int grayValue;	
+			for(int mm=a*-1;mm<a+1;mm++)
+				for(int nn=b*-1;nn<b+1;nn++)
+				{
+				for(int nn=0;nn<3;nn++)
+				{
+				if(i+mm-1<0||j+nn-1<0||i+mm-1>=row||j+nn-1>=col)
+					grayValue=0;
+				else
+					grayValue=image.at<Vec3b>(i+mm-1,j+nn-1)[0];	
+				if(grayValue>image2.at<Vec3b>(i,j)[0])
+				{
+					image3.at<Vec3b>(i,j)[0]=0;
+					image3.at<Vec3b>(i,j)[1]=0;
+					image3.at<Vec3b>(i,j)[2]=0;
+					break;
+				}
+				}
+				}
+		}
+	//双阈值
+	Mat image4 = image3.clone();
+	for(int i=0;i<row;i++)
+		for(int j=0;j<col;j++)
+		{
+			int grayValue=image3.at<Vec3b>(i,j)[0];
+			if(grayValue<lowThr)
+			{
+				image4.at<Vec3b>(i,j)[0]=0;
+				image4.at<Vec3b>(i,j)[1]=0;
+				image4.at<Vec3b>(i,j)[2]=0;
+			}
+			else
+			{
+				if(grayValue>highThr)
+				{}
+				else
+				{
+				int judge=0;
+				for(int p=-1;p<=1;p++)
+					for(int q=-1;q<=1;q++)
+					{
+					if(image3.at<Vec3b>(i+p,j+q)[0]>highThr)
+					{
+						judge=1;
+					}
+					}
+				if(judge==0)
+				{
+					image4.at<Vec3b>(i,j)[0]=0;
+					image4.at<Vec3b>(i,j)[1]=0;
+					image4.at<Vec3b>(i,j)[2]=0;
+				}
+				}
+			}
+		}
+	imshow("cannyEdgeDetect", image4);
+	waitKey(0);
+	//存储滤波后图片
+	if(isSave==1)
+	{
+		imwrite(name,image4);
+	}
+}
+
+int main()
+{
+	//string file="/home/xyz/桌面/数字图像处理/作业/第4-次作业/test3_corrupt.pgm";
+	string file="/home/xyz/桌面/数字图像处理/作业/第4-次作业/test4.tif";
+	Mat image=imread(file);
+	if(!image.data)
+	{
+		printf("No image data\n");
+		return -1;
+	}
+	//medianFilter(image,3,3,1,"test2_33M.bmp");
+	//spatialLowpass(image,3,3,2,1,"test1_33G.bmp");
+	//unsharpMask(image,2,3,3,2,1,"test4_unsharp.bmp");
+	//spatialHighpass(image,1,1,"test4_Laplace.bmp");
+	canny(image,3,3,1,2,1,"test4_canny.bmp");
+	return 0;
+}
